@@ -81,8 +81,45 @@ enough context to act on it months later. See `CLAUDE.md`.
 - **Discovery.** Suggest topics from the graph's shape alone. Optionally, and
   only with explicit consent, enrich against a local corpus (a Wikipedia dump,
   an arXiv mirror) — never a live service.
-- **Web UI.** Read and explore first: timeline, graph view, provenance
-  inspector. Localhost only, no CDN assets, no telemetry, bundled offline.
+- **Web UI.** A first read-and-explore UI landed as `diairy serve` (stdlib
+  `http.server`, loopback only, no CDN assets). `--write` adds source entries to
+  the vault (via `diairy.vault.writer.write_entry`, additive-only), `--dev`
+  unlocks pipeline/graph/tests and implies `--write`. Still deferred:
+  - **Editing existing entries from the UI.** The writer only creates new files.
+    Revising an existing note in place would mean segmentation churn and needs a
+    supersede-aware flow; keep it out until that is designed. For now the UI
+    adds, and the user edits source in their own editor.
+  - **Richer capture.** Attachments and voice notes (see the transcription
+    profiles in the registry) should land as vault files through the same writer.
+  - **A `diairy new` / `diairy add` command.** The writer is UI-only; expose the
+    same additive capture from the CLI for parity.
+  - **Real-model `ask` over the web.** The API path exists but is only tested on
+    the `fake` profile; exercise it against a real model and stream the answer
+    (Server-Sent Events) instead of the current blocking POST.
+  - **Live pipeline progress.** `POST /api/pipeline` blocks until a stage ends;
+    stream per-chunk progress so a long overnight `process` is watchable.
+  - **A real graph view.** `/api/neighbours` returns a text list; draw the
+    one-hop neighbourhood, and add a timeline over `event_time`.
+  - **Concept/vocabulary browser.** No page lists canonical concepts and their
+    aliases yet; add one, linking each concept to its supporting passages.
+  - **Auth for non-loopback binds.** `serve --host` beyond `127.0.0.1` is
+    unauthenticated; require a token before allowing any non-loopback bind
+    (especially now that `--write` and `--dev` can mutate the vault and store).
+  - **ADR for the web surface.** Record why the UI lives in `diairy-cli` as
+    `serve` (rather than a `diairy-web` package) and why it is stdlib-only.
+  - **Real-model `ask` over the web.** The API path exists but is only tested on
+    the `fake` profile; exercise it against a real model and stream the answer
+    (Server-Sent Events) instead of the current blocking POST.
+  - **Live pipeline progress.** `POST /api/pipeline` blocks until a stage ends;
+    stream per-chunk progress so a long overnight `process` is watchable.
+  - **A real graph view.** `/api/neighbours` returns a text list; draw the
+    one-hop neighbourhood, and add a timeline over `event_time`.
+  - **Concept/vocabulary browser.** No page lists canonical concepts and their
+    aliases yet; add one, linking each concept to its supporting passages.
+  - **Auth for non-loopback binds.** `serve --host` beyond `127.0.0.1` is
+    unauthenticated; require a token before allowing any non-loopback bind.
+  - **ADR for the web surface.** Record why the UI lives in `diairy-cli` as
+    `serve` (rather than a `diairy-web` package) and why it is stdlib-only.
 
 ## Engineering
 

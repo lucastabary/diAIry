@@ -14,6 +14,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from diairy.cli.context import build_context
+from diairy.cli.web import address, run_server
 from diairy.core.errors import DiairyError
 from diairy.store.graph import graph_backend_available
 from diairy.vault.git import VaultGit
@@ -207,6 +208,42 @@ def status() -> None:
                     )
     except DiairyError as exc:
         _fail(exc)
+
+
+@app.command()
+def serve(
+    host: Annotated[str, typer.Option(help="Address to bind. Loopback by default.")] = "127.0.0.1",
+    port: Annotated[int, typer.Option(help="Port to listen on.")] = 8765,
+    write: Annotated[
+        bool, typer.Option("--write", help="Let the UI add source entries to the vault.")
+    ] = False,
+    dev: Annotated[
+        bool,
+        typer.Option("--dev", help="Unlock the pipeline, graph and test panels (implies --write)."),
+    ] = False,
+) -> None:
+    """Serve the local web UI. A browser window onto what the batch did."""
+    url = address(host, port)
+    can_write = write or dev
+    mode = "[yellow]developer[/yellow]" if dev else ("write" if can_write else "read-only")
+    console.print(
+        Panel.fit(
+            f"[bold]{url}[/bold]\n"
+            f"[dim]mode[/dim]     {mode}\n"
+            f"[dim]writing[/dim]  {'on' if can_write else 'off'}\n"
+            f"[dim]egress[/dim]   loopback only",
+            title="diAIry is serving",
+        )
+    )
+    console.print("Open the address above in a browser. [dim]Ctrl-C to stop.[/dim]")
+    try:
+        run_server(host=host, port=port, dev=dev, write=write)
+    except OSError as exc:
+        error_console.print(
+            f"[bold red]error[/bold red] could not bind {url}: {exc}. "
+            f"Try another --port, or stop whatever is already using it."
+        )
+        raise typer.Exit(EXIT_FAILURE) from exc
 
 
 @app.command()
