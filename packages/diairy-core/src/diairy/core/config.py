@@ -60,6 +60,12 @@ class Settings(BaseSettings):
     request_timeout_seconds: float = 600.0
     """Generous on purpose: this is a nightly batch, not an interactive UI."""
 
+    transcription_device: str = "auto"
+    """Where faster-whisper runs: ``auto`` picks CUDA if present, else CPU."""
+
+    transcription_compute_type: str = "int8"
+    """faster-whisper quantisation. ``int8`` is the light default for CPU."""
+
     chunk_target_chars: int = 1200
     chunk_overlap_chars: int = 120
     canonicalization_threshold: float = 0.86
@@ -83,6 +89,15 @@ class Settings(BaseSettings):
         return self.data_dir / "runs"
 
     @property
+    def models_dir(self) -> Path:
+        """Where downloaded model weights live (e.g. faster-whisper's).
+
+        Derived and re-fetchable, so it sits under ``data_dir`` with the rest of
+        the rebuildable state, never in the vault.
+        """
+        return self.data_dir / "models"
+
+    @property
     def ollama_base_url(self) -> str:
         return f"http://{self.ollama_host}:{self.ollama_port}"
 
@@ -93,7 +108,7 @@ class Settings(BaseSettings):
 
     def ensure_directories(self) -> None:
         """Create the derived directories. Never touches the vault."""
-        for directory in (self.data_dir, self.runs_dir):
+        for directory in (self.data_dir, self.runs_dir, self.models_dir):
             directory.mkdir(parents=True, exist_ok=True)
 
 

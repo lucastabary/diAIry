@@ -63,6 +63,8 @@
   button.go:hover { filter: brightness(1.08); }
   button.go.ghost { background: var(--panel-2); color: var(--ink); border: 1px solid var(--line); font-weight: 500; }
   button.go:disabled { opacity: .5; cursor: default; }
+  button.go.recording { background: var(--bad); color: #2a0b0b; border-color: transparent; animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 50% { filter: brightness(1.2); } }
   .out { margin-top: 20px; }
   .card {
     background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
@@ -124,6 +126,10 @@
     <div class="row" style="margin-bottom:10px">
       <label class="inline">date <input type="date" id="writeDate"></label>
       <div class="grow"><input type="text" id="writeTitle" placeholder="title (optional)"></div>
+    </div>
+    <div class="row" style="margin-bottom:10px" id="recRow" hidden>
+      <button class="go ghost" id="recBtn">&#127908; Record</button>
+      <span class="meta" id="recNote">Speak a note &mdash; it&rsquo;s transcribed locally, in any language, and dropped in below to review before saving.</span>
     </div>
     <textarea id="writeBody" style="min-height:200px" placeholder="What happened, what you thought, in your own words&hellip;"></textarea>
     <div class="row" style="margin-top:10px">
@@ -392,6 +398,8 @@ $("graphInput").addEventListener("keydown", (e) => { if (e.key === "Enter") doGr
 
 // -- WRITE --
 function todayISO() { return new Date().toISOString().slice(0, 10); }
+// Set when a recording has been transcribed, so Save links the audio to the entry.
+let pendingAudio = null;
 async function saveEntry(thenIngest) {
   const body = $("writeBody").value;
   if (!body.trim()) { $("writeNote").textContent = "write something first"; return; }
@@ -399,7 +407,7 @@ async function saveEntry(thenIngest) {
   note.textContent = ""; busy(out, thenIngest ? "saving and ingesting…" : "saving…");
   try {
     const d = await api("/api/vault/entry", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: $("writeTitle").value, date: $("writeDate").value, body }) });
+      body: JSON.stringify({ title: $("writeTitle").value, date: $("writeDate").value, body, audio: pendingAudio }) });
     let html = `<div class="card"><span class="ok">saved</span> <span class="meta">${esc(d.relative_path)}</span></div>`;
     if (thenIngest) {
       const ing = await api("/api/vault/ingest", { method: "POST" });
@@ -410,11 +418,57 @@ async function saveEntry(thenIngest) {
       html += `<p class="meta">${esc(d.hint)}</p>`;
     }
     out.innerHTML = html;
-    $("writeTitle").value = ""; $("writeBody").value = "";
+    $("writeTitle").value = ""; $("writeBody").value = ""; pendingAudio = null; $("recNote").textContent = "";
   } catch (e) { fail(out, e); }
 }
 $("writeSave").addEventListener("click", () => saveEntry(false));
 $("writeSaveIngest").addEventListener("click", () => saveEntry(true));
+
+// -- VOICE (record → local transcription → editor) --
+let mediaRecorder = null, recChunks = [], recording = false, recMime = "audio/webm", recExt = "webm";
+function updateRecUI() {
+  const btn = $("recBtn");
+  btn.innerHTML = recording ? "&#9632; Stop" : "&#127908; Record";
+  btn.classList.toggle("recording", recording);
+}
+async function toggleRecord() {
+  if (recording) { mediaRecorder.stop(); return; }
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch (e) { $("recNote").textContent = "microphone unavailable: " + (e.message || e); return; }
+  recMime = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm"
+    : (MediaRecorder.isTypeSupported("audio/mp4") ? "audio/mp4" : "");
+  recExt = recMime.includes("mp4") ? "mp4" : "webm";
+  mediaRecorder = recMime ? new MediaRecorder(stream, { mimeType: recMime }) : new MediaRecorder(stream);
+  recChunks = [];
+  mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size) recChunks.push(e.data); };
+  mediaRecorder.onstop = async () => {
+    stream.getTracks().forEach((t) => t.stop());
+    recording = false; updateRecUI();
+    await sendAudio(new Blob(recChunks, { type: recMime || "audio/webm" }));
+  };
+  mediaRecorder.start();
+  recording = true; updateRecUI();
+  $("recNote").textContent = "listening… click Stop when you’re done.";
+}
+async function sendAudio(blob) {
+  const note = $("recNote"); note.innerHTML = `<span class="spinner">transcribing locally…</span>`;
+  try {
+    const res = await fetch("/api/vault/transcribe?ext=" + encodeURIComponent(recExt),
+      { method: "POST", headers: { "Content-Type": blob.type || "audio/webm" }, body: blob });
+    let d = {}; try { d = await res.json(); } catch (_) {}
+    if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`);
+    pendingAudio = d.audio;
+    const ta = $("writeBody");
+    ta.value = (ta.value.trim() ? ta.value.replace(/\s+$/, "") + "\n\n" : "") + (d.text || "");
+    ta.focus();
+    note.innerHTML = `<span class="ok">transcribed</span> — review, then save. <span class="meta">${esc(d.audio)}</span>`;
+  } catch (e) {
+    note.textContent = "";
+    fail($("writeOut"), e);
+  }
+}
+$("recBtn").addEventListener("click", toggleRecord);
 
 // -- DEV config + tests --
 async function loadConfig() {
@@ -453,6 +507,8 @@ $("testGo").addEventListener("click", runTests);
     if (d.write) {
       $("writeBadge").hidden = false;
       document.querySelectorAll(".writetab").forEach((b) => (b.hidden = false));
+      // The mic needs both a place to write and a transcription model in the profile.
+      if (d.transcription_backend) $("recRow").hidden = false;
       showTab("write");
     }
     if (d.dev) {

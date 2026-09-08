@@ -36,6 +36,7 @@ from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
@@ -43,9 +44,12 @@ from diairy.cli.context import AppContext, build_context
 from diairy.core.clock import ensure_aware, utc_now
 from diairy.core.config import Settings, load_settings
 from diairy.core.egress import install_egress_guard
-from diairy.core.errors import DiairyError
+from diairy.core.errors import DiairyError, ProviderError
 from diairy.store.graph import graph_backend_available
-from diairy.vault.writer import write_entry
+from diairy.vault.writer import write_attachment, write_entry
+
+_MAX_AUDIO_BYTES = 100 * 1024 * 1024
+"""A recorded note is minutes of speech, not a media library. Refuse more."""
 
 ContextFactory = Callable[..., AppContext]
 """How a request obtains its wiring. ``build_context`` in production, a fake in tests."""
@@ -114,6 +118,12 @@ def _profile_payload(ctx: AppContext, *, dev: bool, write: bool) -> dict[str, An
         "extraction_backend": ctx.profile.extraction.backend,
         "embedding_model": ctx.profile.embedding.model,
         "embedding_backend": ctx.profile.embedding.backend,
+        "transcription_backend": (
+            ctx.profile.transcription.backend if ctx.profile.transcription else None
+        ),
+        "transcription_model": (
+            ctx.profile.transcription.model if ctx.profile.transcription else None
+        ),
         "vault_path": str(ctx.settings.vault_path),
         "data_dir": str(ctx.settings.data_dir),
         "db_path": str(ctx.settings.db_path),
@@ -227,15 +237,63 @@ def _create_entry_payload(ctx: AppContext, body: dict[str, Any]) -> Response:
     text = str(body.get("body", ""))
     title_raw = body.get("title")
     title = str(title_raw).strip() if title_raw not in (None, "") else None
+    audio_raw = body.get("audio")
+    audio = str(audio_raw).strip() if audio_raw not in (None, "") else None
     event_time = _parse_event_time(body.get("date"))
 
-    entry = write_entry(ctx.settings.vault_path, body=text, event_time=event_time, title=title)
+    entry = write_entry(
+        ctx.settings.vault_path, body=text, event_time=event_time, title=title, audio=audio
+    )
     return Response(
         status=201,
         payload={
             "relative_path": entry.relative_path,
             "event_time": entry.event_time,
             "hint": "Run ingest to record it, then process to extract facts.",
+        },
+    )
+
+
+def _transcribe_payload(
+    ctx: AppContext, audio: bytes, *, language: str | None, suffix: str
+) -> Response:
+    """Transcribe a recording, keep the audio, and return the text for review.
+
+    The audio is transcribed from a throwaway temp file first; only on success
+    is the recording persisted as a vault attachment. That way a failed
+    transcription -- a missing model, an empty upload -- never leaves an
+    orphaned blob behind. The transcript is *not* saved as an entry here: the
+    frontend drops it into the editor so the user reviews it before saving,
+    which is when the returned ``audio`` path gets linked. See ADR 0009.
+    """
+    if ctx.transcriber is None:
+        return _error(
+            "This profile has no transcription model. Pick a profile whose "
+            "registry entry defines one, or add a [transcription] section.",
+            503,
+        )
+    if not audio:
+        return _error("No audio was received. Record something, then try again.", 400)
+
+    with NamedTemporaryFile(suffix=f".{suffix}", delete=True) as handle:
+        handle.write(audio)
+        handle.flush()
+        try:
+            text = ctx.transcriber.transcribe(handle.name, language=language)
+        except ProviderError as exc:
+            # A missing dependency or undownloaded weights: the user's machine is
+            # not ready, not a bad request. The message already says what to run.
+            return _error(str(exc), 503)
+
+    attachment = write_attachment(
+        ctx.settings.vault_path, audio, event_time=utc_now(), suffix=suffix
+    )
+    return Response(
+        status=200,
+        payload={
+            "text": text,
+            "audio": attachment.relative_path,
+            "language": language,
         },
     )
 
@@ -341,6 +399,22 @@ def _repository_root() -> Path:
 # -- routing ----------------------------------------------------------------
 
 
+def _is_json(content_type: str | None) -> bool:
+    """Whether a request body should be parsed as JSON, from its Content-Type."""
+    return content_type is not None and "application/json" in content_type.lower()
+
+
+def _json_body(raw: bytes) -> dict[str, Any]:
+    """Parse a JSON request body to a dict, tolerating anything malformed."""
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
 def _read_int(query: dict[str, list[str]], key: str, default: int) -> int:
     values = query.get(key)
     if not values:
@@ -359,6 +433,7 @@ def dispatch(  # noqa: PLR0911 -- a routing table has one return per route
     *,
     dev: bool,
     write: bool = False,
+    raw_body: bytes = b"",
     context_factory: ContextFactory = build_context,
 ) -> Response:
     """Route one request to a handler. Pure: no socket, no global state.
@@ -380,7 +455,7 @@ def dispatch(  # noqa: PLR0911 -- a routing table has one return per route
 
     needs_graph = path in {"/api/status", "/api/neighbours"}
     dev_routes = {"/api/pipeline", "/api/neighbours", "/api/tests"}
-    write_routes = {"/api/vault/entry", "/api/vault/ingest"}
+    write_routes = {"/api/vault/entry", "/api/vault/ingest", "/api/vault/transcribe"}
     if path in dev_routes and not dev:
         return _error(
             "This action needs developer mode. Start the server with `diairy serve --dev`.", 403
@@ -395,7 +470,7 @@ def dispatch(  # noqa: PLR0911 -- a routing table has one return per route
             if method == "GET":
                 return _route_get(path, query, ctx=ctx, dev=dev, write=write)
             if method == "POST":
-                return _route_post(path, body, ctx=ctx)
+                return _route_post(path, body, query, raw_body, ctx=ctx)
             return _error("Not found.", 404)
     except DiairyError as exc:
         return _error(str(exc), 400)
@@ -429,7 +504,12 @@ def _route_get(  # noqa: PLR0911 -- a routing table has one return per route
 
 
 def _route_post(  # noqa: PLR0911 -- a routing table has one return per route
-    path: str, body: dict[str, Any], *, ctx: AppContext
+    path: str,
+    body: dict[str, Any],
+    query: dict[str, list[str]],
+    raw_body: bytes,
+    *,
+    ctx: AppContext,
 ) -> Response:
     if path == "/api/search":
         text = str(body.get("query", "")).strip()
@@ -445,6 +525,10 @@ def _route_post(  # noqa: PLR0911 -- a routing table has one return per route
         return _create_entry_payload(ctx, body)
     if path == "/api/vault/ingest":
         return _ingest_payload(ctx)
+    if path == "/api/vault/transcribe":
+        language = (query.get("language") or [""])[0].strip() or None
+        suffix = (query.get("ext") or ["webm"])[0]
+        return _transcribe_payload(ctx, raw_body, language=language, suffix=suffix)
     if path == "/api/pipeline":
         stage = str(body.get("stage", ""))
         raw_limit = body.get("limit")
@@ -468,20 +552,19 @@ class _Handler(BaseHTTPRequestHandler):
     def _run(self, method: str) -> None:
         parts = urlsplit(self.path)
         query = parse_qs(parts.query)
-        body = self._read_body() if method == "POST" else {}
-        response = dispatch(method, parts.path, query, body, dev=self.dev, write=self.write)
+        raw = self._read_raw() if method == "POST" else b""
+        body = _json_body(raw) if _is_json(self.headers.get("Content-Type")) else {}
+        response = dispatch(
+            method, parts.path, query, body, dev=self.dev, write=self.write, raw_body=raw
+        )
         self._write(response)
 
-    def _read_body(self) -> dict[str, Any]:
+    def _read_raw(self) -> bytes:
+        """Read the request body, capped so an oversized upload cannot exhaust memory."""
         length = int(self.headers.get("Content-Length", 0) or 0)
         if length <= 0:
-            return {}
-        raw = self.rfile.read(length)
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError:
-            return {}
-        return parsed if isinstance(parsed, dict) else {}
+            return b""
+        return self.rfile.read(min(length, _MAX_AUDIO_BYTES))
 
     def _write(self, response: Response) -> None:
         body = response.body()

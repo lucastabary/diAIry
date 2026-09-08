@@ -8,7 +8,7 @@ import pytest
 
 from diairy.core.config import Settings
 from diairy.core.errors import ConfigError
-from diairy.nlp.factory import build_embedder, build_llm, resolve_profile
+from diairy.nlp.factory import build_embedder, build_llm, build_transcriber, resolve_profile
 from diairy.nlp.prompts import load_prompt
 from diairy.nlp.registry import load_registry
 from diairy.nlp.schema import extraction_json_schema
@@ -73,6 +73,24 @@ def test_an_unknown_backend_is_refused_clearly(tmp_path: Path) -> None:
     settings = Settings(vault_path=tmp_path, data_dir=tmp_path)
     with pytest.raises(ConfigError, match="Unknown LLM backend"):
         build_llm(ModelSpec(backend="mlx", model="whatever"), settings)
+
+
+def test_the_fake_profile_builds_a_transcriber_that_needs_no_weights(tmp_path: Path) -> None:
+    settings = Settings(vault_path=tmp_path, data_dir=tmp_path, model_profile="fake")
+    spec = resolve_profile(settings).transcription
+    assert spec is not None
+    transcriber = build_transcriber(spec, settings)
+    assert transcriber.name == "scripted"
+    # It ignores the audio path entirely and returns a canned transcript.
+    assert transcriber.transcribe("nowhere.webm")
+
+
+def test_an_unknown_transcription_backend_is_refused_clearly(tmp_path: Path) -> None:
+    from diairy.nlp.registry import ModelSpec
+
+    settings = Settings(vault_path=tmp_path, data_dir=tmp_path)
+    with pytest.raises(ConfigError, match="Unknown transcription backend"):
+        build_transcriber(ModelSpec(backend="mlx", model="whatever"), settings)
 
 
 def test_prompt_version_is_derived_from_content() -> None:

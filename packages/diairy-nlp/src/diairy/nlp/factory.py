@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from diairy.core.config import Settings
 from diairy.core.errors import ConfigError
-from diairy.nlp.fake import HashingEmbeddings, ScriptedLLM
+from diairy.nlp.fake import HashingEmbeddings, ScriptedLLM, ScriptedTranscription
 from diairy.nlp.ollama import OllamaEmbeddings, OllamaLLM
-from diairy.nlp.provider import EmbeddingProvider, LLMProvider
+from diairy.nlp.provider import EmbeddingProvider, LLMProvider, TranscriptionProvider
 from diairy.nlp.registry import ModelSpec, Profile, load_registry
 
 DEFAULT_FAKE_DIMENSIONS = 64
@@ -61,5 +61,31 @@ def build_embedder(spec: ModelSpec, settings: Settings) -> EmbeddingProvider:
     message = (
         f"Unknown embedding backend {spec.backend!r}. Add an adapter and register "
         f"it in diairy.nlp.factory."
+    )
+    raise ConfigError(message)
+
+
+def build_transcriber(spec: ModelSpec, settings: Settings) -> TranscriptionProvider:
+    """Instantiate the speech-to-text backend named by ``spec``.
+
+    Constructing the provider is cheap: ``faster-whisper`` is imported and the
+    weights are loaded lazily, on the first call to ``transcribe``.
+    """
+    if spec.backend == "faster-whisper":
+        # Imported here so the optional dependency is only touched on the path
+        # that actually needs it. See diairy.nlp.whisper for why it stays lazy.
+        from diairy.nlp.whisper import FasterWhisperTranscription  # noqa: PLC0415
+
+        return FasterWhisperTranscription(
+            spec.model,
+            download_root=str(settings.models_dir),
+            device=settings.transcription_device,
+            compute_type=settings.transcription_compute_type,
+        )
+    if spec.backend == "fake":
+        return ScriptedTranscription()
+    message = (
+        f"Unknown transcription backend {spec.backend!r}. Add an adapter and "
+        f"register it in diairy.nlp.factory."
     )
     raise ConfigError(message)
