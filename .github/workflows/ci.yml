@@ -89,7 +89,7 @@ jobs:
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: coverage
       - name: Fetch the base branch
