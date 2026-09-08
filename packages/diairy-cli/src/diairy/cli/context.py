@@ -13,8 +13,8 @@ from diairy.core.config import Settings, load_settings
 from diairy.core.egress import install_egress_guard
 from diairy.nlp.canonical import Canonicalizer
 from diairy.nlp.extract import FactExtractor
-from diairy.nlp.factory import build_embedder, build_llm, resolve_profile
-from diairy.nlp.provider import EmbeddingProvider, LLMProvider
+from diairy.nlp.factory import build_embedder, build_llm, build_transcriber, resolve_profile
+from diairy.nlp.provider import EmbeddingProvider, LLMProvider, TranscriptionProvider
 from diairy.nlp.registry import Profile
 from diairy.pipeline.runner import Pipeline
 from diairy.query.answer import Answerer
@@ -35,6 +35,7 @@ class AppContext:
     search: SearchIndex
     llm: LLMProvider
     embedder: EmbeddingProvider
+    transcriber: TranscriptionProvider | None
     graph: GraphProjection | None
 
     def pipeline(self) -> Pipeline:
@@ -93,6 +94,11 @@ def build_context(*, with_graph: bool = True) -> AppContext:
     graph = (
         GraphProjection(settings.graph_path) if with_graph and graph_backend_available() else None
     )
+    transcriber = (
+        build_transcriber(profile.transcription, settings)
+        if profile.transcription is not None
+        else None
+    )
     return AppContext(
         settings=settings,
         profile=profile,
@@ -100,5 +106,6 @@ def build_context(*, with_graph: bool = True) -> AppContext:
         search=SearchIndex(connection),
         llm=build_llm(profile.extraction, settings),
         embedder=build_embedder(profile.embedding, settings),
+        transcriber=transcriber,
         graph=graph,
     )

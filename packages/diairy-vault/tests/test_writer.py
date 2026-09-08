@@ -13,7 +13,7 @@ import pytest
 
 from diairy.core.errors import VaultError
 from diairy.vault.markdown import infer_event_time, parse_document
-from diairy.vault.writer import write_entry
+from diairy.vault.writer import write_attachment, write_entry
 
 
 def _read(entry_path: Path) -> str:
@@ -86,3 +86,45 @@ def test_an_unusable_title_falls_back_to_the_body_then_the_bare_date(tmp_path: P
     # When neither title nor body yields a slug, the bare date stands alone.
     bare = write_entry(tmp_path, body="!!! ??? ...", event_time=when, title="???")
     assert bare.relative_path == "2026-04-02.md"
+
+
+def test_an_audio_link_is_recorded_in_the_frontmatter(tmp_path: Path) -> None:
+    when = datetime(2026, 4, 2, tzinfo=UTC)
+    entry = write_entry(
+        tmp_path,
+        body="Note dictee.",
+        event_time=when,
+        audio="attachments/2026-04-02-090000-abcd1234.webm",
+    )
+    parsed = parse_document(_read(entry.absolute_path))
+    assert parsed.frontmatter["audio"] == "attachments/2026-04-02-090000-abcd1234.webm"
+
+
+def test_a_recording_is_written_under_attachments(tmp_path: Path) -> None:
+    when = datetime(2026, 4, 2, 9, tzinfo=UTC)
+    attachment = write_attachment(tmp_path, b"fake-audio-bytes", event_time=when, suffix="webm")
+
+    assert attachment.absolute_path.exists()
+    assert attachment.absolute_path.read_bytes() == b"fake-audio-bytes"
+    assert attachment.relative_path.startswith("attachments/")
+    assert attachment.relative_path.endswith(".webm")
+
+
+def test_a_leading_dot_in_the_suffix_is_tolerated(tmp_path: Path) -> None:
+    when = datetime(2026, 4, 2, 9, tzinfo=UTC)
+    attachment = write_attachment(tmp_path, b"x", event_time=when, suffix=".WAV")
+    assert attachment.relative_path.endswith(".wav")
+
+
+def test_two_different_recordings_never_collide(tmp_path: Path) -> None:
+    when = datetime(2026, 4, 2, 9, tzinfo=UTC)
+    first = write_attachment(tmp_path, b"one", event_time=when, suffix="webm")
+    second = write_attachment(tmp_path, b"two", event_time=when, suffix="webm")
+    assert first.absolute_path != second.absolute_path
+    assert first.absolute_path.read_bytes() == b"one"
+    assert second.absolute_path.read_bytes() == b"two"
+
+
+def test_an_empty_recording_is_refused(tmp_path: Path) -> None:
+    with pytest.raises(VaultError):
+        write_attachment(tmp_path, b"", event_time=datetime(2026, 4, 2, tzinfo=UTC), suffix="webm")

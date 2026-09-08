@@ -119,8 +119,9 @@ explicit_package_bases = true
 
 [[tool.mypy.overrides]]
 # Third-party adapters without type stubs. Kept to the thinnest possible layer
-# precisely so that this exemption stays small.
-module = ["kuzu.*", "sqlite_vec.*"]
+# precisely so that this exemption stays small. faster_whisper is an optional
+# extra, so it is absent from the CI environment entirely.
+module = ["kuzu.*", "sqlite_vec.*", "faster_whisper.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

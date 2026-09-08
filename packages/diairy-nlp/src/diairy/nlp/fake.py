@@ -116,6 +116,32 @@ class CassetteLLM:
         return LLMResponse(text=self._entries[key], model=self._model)
 
 
+@dataclass
+class ScriptedTranscription:
+    """Returns canned transcripts, ignoring the audio entirely.
+
+    This is what lets the whole voice-capture path -- upload, attachment, entry,
+    ingest -- run in CI with no weights, no audio decoding and no network. It
+    records the calls it received so a test can assert what was asked of it.
+    """
+
+    responses: Sequence[str] = field(default_factory=lambda: ["transcription de test"])
+    calls: list[tuple[str, str | None]] = field(default_factory=list, init=False)
+    _cursor: int = field(default=0, init=False)
+
+    @property
+    def name(self) -> str:
+        return "scripted"
+
+    def transcribe(self, audio_path: str, *, language: str | None = None) -> str:
+        self.calls.append((audio_path, language))
+        if not self.responses:
+            return ""
+        text = self.responses[min(self._cursor, len(self.responses) - 1)]
+        self._cursor += 1
+        return text
+
+
 class HashingEmbeddings:
     """Deterministic lexical embeddings, with no model behind them.
 

@@ -43,6 +43,12 @@ def _post(
     return dispatch("POST", path, {}, body, dev=dev, write=write)
 
 
+def _post_raw(path: str, raw: bytes, *, write: bool = False, **query: str) -> Response:
+    return dispatch(
+        "POST", path, {k: [v] for k, v in query.items()}, {}, dev=False, write=write, raw_body=raw
+    )
+
+
 def test_index_is_served_as_html(web_env: Path) -> None:
     response = dispatch("GET", "/", {}, {}, dev=False)
     assert response.status == 200
@@ -151,6 +157,46 @@ def test_developer_mode_can_also_write(web_env: Path) -> None:
     # run_server sets write=write or dev; dispatch is told the resolved value.
     created = _post("/api/vault/entry", {"body": "Note dev."}, dev=True, write=True)
     assert created.status == 201
+
+
+def test_transcription_is_refused_without_write_mode(web_env: Path) -> None:
+    response = _post_raw("/api/vault/transcribe", b"audio-bytes", write=False)
+    assert response.status == 403
+    assert not web_env.exists(), "a refused transcription must not touch the vault"
+
+
+def test_transcription_returns_text_and_keeps_the_audio(web_env: Path) -> None:
+    # The fake profile's transcription backend ignores the audio and echoes a
+    # canned transcript, so the whole path runs offline with no weights.
+    response = _post_raw("/api/vault/transcribe", b"pretend-webm-bytes", write=True, ext="webm")
+    assert response.status == 200
+    assert response.payload["text"], "a transcript should come back for review"
+
+    audio_rel = response.payload["audio"]
+    assert audio_rel.startswith("attachments/")
+    assert (web_env / audio_rel).exists(), "the recording should be kept in the vault"
+
+
+def test_an_empty_recording_is_refused(web_env: Path) -> None:
+    response = _post_raw("/api/vault/transcribe", b"", write=True)
+    assert response.status == 400
+
+
+def test_a_transcribed_entry_links_its_audio(web_env: Path) -> None:
+    created = _post(
+        "/api/vault/entry",
+        {"body": "Note dictee.", "audio": "attachments/2026-04-02-090000-abcd1234.webm"},
+        write=True,
+    )
+    assert created.status == 201
+    written = (web_env / created.payload["relative_path"]).read_text(encoding="utf-8")
+    assert "audio:" in written
+    assert "abcd1234.webm" in written
+
+
+def test_the_profile_reports_the_transcription_backend(web_env: Path) -> None:
+    # The fake profile now declares a transcription model, so the UI reveals the mic.
+    assert _get("/api/profile", dev=True).payload["transcription_backend"] == "fake"
 
 
 def test_unknown_api_route_is_a_404(web_env: Path) -> None:

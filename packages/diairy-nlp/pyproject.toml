@@ -10,6 +10,12 @@ dependencies = [
     "pydantic>=2.9",
 ]
 
+[project.optional-dependencies]
+# Local speech-to-text. Heavy and platform-specific, so it stays optional: CI
+# and a base install never pull it, and the provider lazy-imports it. Install
+# with `uv sync --all-packages --extra transcription`. See ADR 0009.
+transcription = ["faster-whisper>=1.0"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

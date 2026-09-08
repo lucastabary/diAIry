@@ -15,7 +15,9 @@ from rich.table import Table
 
 from diairy.cli.context import build_context
 from diairy.cli.web import address, run_server
+from diairy.core.config import load_settings
 from diairy.core.errors import DiairyError
+from diairy.nlp.factory import resolve_profile
 from diairy.store.graph import graph_backend_available
 from diairy.vault.git import VaultGit
 
@@ -27,6 +29,14 @@ app = typer.Typer(
 )
 console = Console()
 error_console = Console(stderr=True)
+
+models_app = typer.Typer(
+    name="models",
+    help="Manage downloaded model weights.",
+    no_args_is_help=True,
+    add_completion=False,
+)
+app.add_typer(models_app)
 
 EXIT_FAILURE = 1
 
@@ -244,6 +254,58 @@ def serve(
             f"Try another --port, or stop whatever is already using it."
         )
         raise typer.Exit(EXIT_FAILURE) from exc
+
+
+@models_app.command("pull")
+def models_pull(
+    profile: Annotated[
+        str | None,
+        typer.Option(help="Which profile's model to fetch. Defaults to the configured one."),
+    ] = None,
+) -> None:
+    """Download the transcription model weights for a profile.
+
+    This is the one command in diAIry that reaches the network on purpose, to
+    fetch model weights -- exactly like `ollama pull`. It runs *outside* the
+    egress guard by design (ADR 0009); every other code path loads weights
+    locally only and can never download. Run it once per machine.
+    """
+    from diairy.nlp.whisper import download_model  # noqa: PLC0415 -- optional extra, lazy by design
+
+    try:
+        settings = load_settings(model_profile=profile) if profile else load_settings()
+        settings.ensure_directories()
+        spec = resolve_profile(settings).transcription
+    except DiairyError as exc:
+        _fail(exc)
+        return
+
+    if spec is None or spec.backend == "fake":
+        error_console.print(
+            f"[bold red]error[/bold red] profile "
+            f"[bold]{settings.model_profile}[/bold] has no downloadable transcription model."
+        )
+        raise typer.Exit(EXIT_FAILURE)
+    if spec.backend != "faster-whisper":
+        error_console.print(
+            f"[bold red]error[/bold red] don't know how to pull weights for backend "
+            f"[bold]{spec.backend}[/bold]. Only faster-whisper is supported here."
+        )
+        raise typer.Exit(EXIT_FAILURE)
+
+    console.print(
+        f"[yellow]reaching the network[/yellow] to fetch [bold]{spec.model}[/bold] "
+        f"into {settings.models_dir}"
+    )
+    try:
+        download_model(spec.model, download_root=str(settings.models_dir))
+    except DiairyError as exc:
+        _fail(exc)
+        return
+    console.print(
+        f"[green]done[/green]. Transcription now works offline on the "
+        f"[bold]{settings.model_profile}[/bold] profile."
+    )
 
 
 @app.command()

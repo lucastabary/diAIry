@@ -29,6 +29,10 @@ backend = "fake"
 model = "hashing-trigram"
 dimensions = 64
 
+[profiles.fake.transcription]
+backend = "fake"
+model = "echo"
+
 # --- Laptops and 8 GB machines. Expect a higher rejection rate.
 [profiles.small]
 description = "Smallest profile that still produces usable French extraction."

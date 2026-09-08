@@ -13,10 +13,28 @@ enough context to act on it months later. See `CLAUDE.md`.
 - **Live file watcher.** Ingestion currently scans the vault on demand, which
   suits a nightly batch. A `diairy watch` daemon would ingest on save. Needs
   debouncing, and must not fight the editor's atomic-write dance.
-- **Voice notes.** `TranscriptionProvider` is defined and unimplemented. Wire
-  `faster-whisper` (already named in the registry per profile), write the
-  transcript into the vault as Markdown with frontmatter pointing at the audio
-  file, and let the normal pipeline take it from there.
+- **Voice notes.** _Done (ADR 0009)._ `FasterWhisperTranscription` is wired
+  behind `TranscriptionProvider`; the Write panel records in the browser
+  (`MediaRecorder`), `POST /api/vault/transcribe` transcribes locally and keeps
+  the audio under `attachments/`, and the transcript is saved as an entry whose
+  `audio:` frontmatter links the recording. Weights come from `diairy models
+  pull`. Still deferred:
+  - **Orphan recordings.** The attachment is written as soon as transcription
+    succeeds, so a recording the user then discards (never saves the entry)
+    leaves an unreferenced blob under `attachments/`. Add a sweep that lists
+    attachments no entry's `audio:` points at, and offer to remove them (respect
+    the append-only spirit: propose, do not silently delete).
+  - **Preloaded / warm model.** The whisper model loads on the first
+    transcription of a server's life, so the first voice note is slow. Optionally
+    warm it at `serve` startup, or keep a small model resident.
+  - **Streaming transcription.** `transcribe` blocks until the whole clip is
+    done. Stream partial text as it decodes for a live feel.
+  - **Language hint.** Capture auto-detects the language, which is right by
+    default; a small optional selector would help short or code-switched clips
+    where detection is shaky (the API already accepts a `language` query param).
+  - **Re-transcription.** The audio is kept precisely so a better model can
+    redo a transcript later; nothing exposes that yet. A `diairy retranscribe`
+    would supersede the old transcript's facts via the normal edit path.
 - **Photos and multimodality.** Either a vision model describing the image into
   Markdown, or true multimodal extraction. Decide with an ADR; the first is far
   cheaper and keeps the vault readable by humans.
@@ -89,8 +107,8 @@ enough context to act on it months later. See `CLAUDE.md`.
     Revising an existing note in place would mean segmentation churn and needs a
     supersede-aware flow; keep it out until that is designed. For now the UI
     adds, and the user edits source in their own editor.
-  - **Richer capture.** Attachments and voice notes (see the transcription
-    profiles in the registry) should land as vault files through the same writer.
+  - **Richer capture.** Voice notes now land through the writer (see "Voice
+    notes" above). Still open: photo/file attachments through the same path.
   - **A `diairy new` / `diairy add` command.** The writer is UI-only; expose the
     same additive capture from the CLI for parity.
   - **Real-model `ask` over the web.** The API path exists but is only tested on
