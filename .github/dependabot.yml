@@ -1,12 +1,19 @@
 # Dependency updates arrive as pull requests, so they go through the same review
 # and the same dependency-allowlist check as anything else.
+#
+# Everything is grouped into a single pull request per ecosystem. Ungrouped, the
+# first run opened four separate PRs and four branches for four action bumps
+# nobody wanted to review individually, which is noise on a two-person project.
 version: 2
 updates:
   - package-ecosystem: "uv"
     directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
+    groups:
+      python-dependencies:
+        patterns: ["*"]
     commit-message:
       prefix: "build"
       include: "scope"
@@ -15,5 +22,9 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+    open-pull-requests-limit: 1
+    groups:
+      github-actions:
+        patterns: ["*"]
     commit-message:
       prefix: "ci"
