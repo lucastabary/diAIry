@@ -1,0 +1,87 @@
+# diAIry model registry.
+#
+# The pool of models the project supports. Each contributor picks the profile
+# their machine can actually run; every profile must produce output valid
+# against the same JSON schema, so the rest of the system never knows or cares
+# which one is in use.
+#
+# Adding a model means adding it here and running the eval suite against it.
+# Nothing else in the codebase may name a model.
+#
+# NOTE: Ollama tags move. Verify a tag with `ollama pull <tag>` before adding it,
+# and record the eval score you measured in the comment above the profile.
+
+version = 1
+default_profile = "medium"
+
+# --- Used by the test suite and CI. No weights, no network, fully deterministic.
+[profiles.fake]
+description = "Deterministic stand-ins. The only profile CI ever runs."
+min_ram_gb = 0
+
+[profiles.fake.extraction]
+backend = "fake"
+model = "scripted"
+context_tokens = 8192
+
+[profiles.fake.embedding]
+backend = "fake"
+model = "hashing-trigram"
+dimensions = 64
+
+# --- Laptops and 8 GB machines. Expect a higher rejection rate.
+[profiles.small]
+description = "Smallest profile that still produces usable French extraction."
+min_ram_gb = 8
+
+[profiles.small.extraction]
+backend = "ollama"
+model = "qwen3:4b"
+context_tokens = 8192
+
+[profiles.small.embedding]
+backend = "ollama"
+model = "bge-m3"
+dimensions = 1024
+
+[profiles.small.transcription]
+backend = "faster-whisper"
+model = "small"
+
+# --- The default. Comfortable on a 16 GB M1.
+[profiles.medium]
+description = "Balanced profile: solid French, reasonable nightly batch time."
+min_ram_gb = 16
+
+[profiles.medium.extraction]
+backend = "ollama"
+model = "qwen3:8b"
+context_tokens = 16384
+
+[profiles.medium.embedding]
+backend = "ollama"
+model = "bge-m3"
+dimensions = 1024
+
+[profiles.medium.transcription]
+backend = "faster-whisper"
+model = "medium"
+
+# --- 32 GB and up. Noticeably better at implicit claims and entity resolution.
+[profiles.large]
+description = "Highest quality extraction. Slow, and worth it overnight."
+min_ram_gb = 32
+
+[profiles.large.extraction]
+backend = "ollama"
+model = "qwen3:14b"
+context_tokens = 32768
+
+[profiles.large.embedding]
+backend = "ollama"
+model = "bge-m3"
+dimensions = 1024
+
+[profiles.large.transcription]
+backend = "faster-whisper"
+model = "large-v3"
