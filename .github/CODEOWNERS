@@ -1,0 +1,9 @@
+# Both maintainers review everything by default.
+*                     @lucastabary
+
+# The invariants live in these files. Changing them is changing the project.
+/CLAUDE.md            @lucastabary
+/docs/adr/            @lucastabary
+/scripts/             @lucastabary
+/.github/workflows/   @lucastabary
+/packages/diairy-core/src/diairy/core/egress.py  @lucastabary

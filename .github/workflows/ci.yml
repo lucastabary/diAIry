@@ -1,0 +1,135 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # CI never downloads model weights and never reaches a model server.
+  # The whole suite runs on the deterministic `fake` profile.
+  DIAIRY_MODEL_PROFILE: fake
+  UV_VERSION: "0.12.10"
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - run: uv sync --all-packages
+      - name: ruff format
+        run: uv run ruff format --check .
+      - name: ruff check
+        run: uv run ruff check . --output-format=github
+
+  typecheck:
+    name: typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - run: uv sync --all-packages
+      - run: uv run mypy
+
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # macos-14 is Apple Silicon: the platform one maintainer actually runs
+        # models on. windows-latest is the other maintainer's daily driver.
+        os: [ubuntu-latest, macos-14, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - run: uv sync --all-packages
+      - name: Configure git for the vault history tests
+        run: |
+          git config --global user.email "ci@localhost"
+          git config --global user.name "CI"
+          git config --global init.defaultBranch main
+      - name: pytest
+        run: uv run pytest --cov --cov-report=xml --cov-report=term
+      - name: Upload coverage
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.xml
+
+  coverage:
+    name: patch coverage
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: coverage
+      - name: Fetch the base branch
+        run: git fetch origin ${{ github.base_ref }}
+      - name: Require coverage on changed lines
+        # Global coverage is a lagging indicator dragged down by adapters CI
+        # cannot exercise (the Ollama client, for one). What matters is that new
+        # code arrives tested, so the gate is on the diff.
+        run: |
+          uv run --with diff-cover diff-cover coverage.xml \
+            --compare-branch=origin/${{ github.base_ref }} \
+            --fail-under=75
+
+  dependencies:
+    name: dependency allowlist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - name: Refuse unreviewed dependencies
+        # Every package we ship is a chance for something to phone home.
+        # New ones are a deliberate decision, not a side effect of a PR.
+        run: uv run --no-project python scripts/check_dependencies.py
+
+  commit-style:
+    name: conventional commits
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Check the pull request title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          pattern='^(feat|fix|docs|test|refactor|perf|build|ci|chore)(\([a-z-]+\))?!?: .+'
+          if ! printf '%s' "$PR_TITLE" | grep -Eq "$pattern"; then
+            echo "::error::PR title must be a conventional commit."
+            echo "Got:      $PR_TITLE"
+            echo "Expected: feat(nlp): prime prompts with the existing vocabulary"
+            exit 1
+          fi

@@ -1,0 +1,49 @@
+# Local guard rails. Install once with:
+#   uv run --with pre-commit pre-commit install
+#
+# Everything here also runs in CI, except the personal-data hook -- which is the
+# one that has to run *before* the commit exists, because git never forgets.
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-added-large-files
+        args: [--maxkb=512]
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: check-yaml
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: trailing-whitespace
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.6
+    hooks:
+      - id: ruff-format
+      - id: ruff
+        args: [--fix]
+
+  - repo: local
+    hooks:
+      - id: no-personal-data
+        name: refuse journal content and derived stores
+        entry: python scripts/check_no_personal_data.py
+        language: system
+        pass_filenames: true
+
+      - id: dependency-allowlist
+        name: refuse unreviewed dependencies
+        entry: python scripts/check_dependencies.py
+        language: system
+        pass_filenames: false
+        files: pyproject\.toml$
+
+      - id: mypy
+        name: mypy (strict)
+        entry: uv run mypy
+        language: system
+        pass_filenames: false
+        types: [python]
