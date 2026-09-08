@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from diairy.cli import main
 from diairy.cli.main import app
 
 runner = CliRunner()
@@ -88,3 +89,26 @@ def test_help_lists_the_pipeline_commands(cli_env: Path) -> None:
     assert result.exit_code == 0
     for command in ("init", "ingest", "process", "run", "ask", "search", "status"):
         assert command in result.output
+
+
+def test_serve_prints_the_address_and_starts_the_server(
+    cli_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(main, "run_server", lambda **kwargs: calls.append(kwargs))
+    result = runner.invoke(app, ["serve", "--port", "8799", "--write"])
+    assert result.exit_code == 0, result.output
+    assert "127.0.0.1:8799" in result.output
+    assert calls == [{"host": "127.0.0.1", "port": 8799, "dev": False, "write": True}]
+
+
+def test_serve_reports_a_port_already_in_use(
+    cli_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _busy(**_kwargs: object) -> None:
+        raise OSError("address already in use")
+
+    monkeypatch.setattr(main, "run_server", _busy)
+    result = runner.invoke(app, ["serve"])
+    assert result.exit_code == 1
+    assert "could not bind" in result.output
