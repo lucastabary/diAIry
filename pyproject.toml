@@ -1,0 +1,155 @@
+# diAIry workspace root.
+# This project is a uv workspace: the real code lives in packages/*.
+# The root itself is never built or published (tool.uv.package = false).
+
+[project]
+name = "diairy"
+version = "0.1.0"
+description = "A fully local, private journal that reads itself into a knowledge graph."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+dependencies = [
+    "diairy-cli",
+    "diairy-core",
+    "diairy-nlp",
+    "diairy-pipeline",
+    "diairy-query",
+    "diairy-store",
+    "diairy-vault",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+diairy-cli = { workspace = true }
+diairy-core = { workspace = true }
+diairy-nlp = { workspace = true }
+diairy-pipeline = { workspace = true }
+diairy-query = { workspace = true }
+diairy-store = { workspace = true }
+diairy-vault = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+    "ruff>=0.8",
+    "types-pyyaml>=6.0",
+]
+
+# ---------------------------------------------------------------------------
+# Ruff: formatting + linting. Both are blocking in CI.
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["packages/*/src"]
+
+[tool.ruff.lint]
+select = [
+    "A",    # builtin shadowing
+    "ANN",  # missing annotations
+    "ARG",  # unused arguments
+    "B",    # bugbear
+    "C4",   # comprehensions
+    "DTZ",  # naive datetimes -- we are bitemporal, tz-awareness is not optional
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # import sorting
+    "N",    # naming
+    "PERF", # performance
+    "PL",   # pylint
+    "PTH",  # use pathlib
+    "RET",  # return simplification
+    "RUF",  # ruff-specific
+    "S",    # bandit (security)
+    "SIM",  # simplification
+    "T20",  # no print() outside the CLI
+    "TID",  # tidy imports
+    "UP",   # pyupgrade
+    "W",    # pycodestyle warnings
+]
+ignore = [
+    "ANN401", # Any is occasionally the honest type at provider boundaries
+    "PLR0913", # argument count is enforced by review, not by a magic number
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests legitimately use side-effect-only fixtures (ARG001) and local imports
+# for optional dependencies (PLC0415); asserts and magic numbers are the point.
+"packages/*/tests/**" = ["ANN", "ARG001", "PLC0415", "PLR2004", "S101"]
+"conftest.py" = ["ANN", "ARG001", "PLR2004", "S101"]
+"evals/**" = ["T20"]                                 # eval scripts print reports
+"scripts/**" = ["T20"]                               # guard scripts report to stdout
+"packages/diairy-cli/**" = ["T20"]                   # the CLI is allowed to print
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.lint.isort]
+known-first-party = ["diairy"]
+
+# ---------------------------------------------------------------------------
+# mypy: strict by default. Exceptions are explicit, justified and few.
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+disallow_any_unimported = true
+enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
+files = ["packages"]
+mypy_path = [
+    "packages/diairy-cli/src",
+    "packages/diairy-core/src",
+    "packages/diairy-nlp/src",
+    "packages/diairy-pipeline/src",
+    "packages/diairy-query/src",
+    "packages/diairy-store/src",
+    "packages/diairy-vault/src",
+]
+namespace_packages = true
+explicit_package_bases = true
+
+[[tool.mypy.overrides]]
+# Third-party adapters without type stubs. Kept to the thinnest possible layer
+# precisely so that this exemption stays small.
+module = ["kuzu.*", "sqlite_vec.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["tests.*", "*.tests.*"]
+disallow_untyped_defs = false
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["packages"]
+addopts = "-ra --strict-markers --strict-config"
+markers = [
+    "loopback: test is allowed to open a loopback socket (local Ollama only)",
+    "llm: test needs a real local model; never runs in CI",
+]
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+branch = true
+source = ["diairy"]
+omit = ["*/tests/*"]
+
+[tool.coverage.report]
+exclude_also = [
+    'if TYPE_CHECKING:',
+    'raise NotImplementedError',
+    '@overload',
+    'class .*\(Protocol\):',
+    '\.\.\.$',
+]

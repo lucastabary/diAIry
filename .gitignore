@@ -1,0 +1,60 @@
+# --- Personal data: never, ever commit journal content or derived stores -----
+# The vault lives outside the repo by default, but these guard against mistakes.
+# Anchored to the repository root on purpose: an unanchored `vault/` would also
+# match packages/diairy-vault/src/diairy/vault/ and silently exclude real source
+# code from both git and the wheel build.
+/vault/
+/vaults/
+/journal/
+*.diairy
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.kuzu/
+/runs/
+*.jsonl
+*.jsonl.gz
+!evals/fixtures/**/*.jsonl
+
+# --- Models -----------------------------------------------------------------
+models/weights/
+*.gguf
+*.safetensors
+*.bin
+
+# --- Python -----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# --- Node (future web app) --------------------------------------------------
+node_modules/
+.svelte-kit/
+apps/web/build/
+
+# --- Environment ------------------------------------------------------------
+.env
+.env.*
+!.env.example
+
+# --- OS / editors -----------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/*
+!.vscode/extensions.json
