@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -102,6 +103,17 @@ def test_explicit_overrides_outrank_everything(
 
 def test_missing_config_file_is_not_an_error(tmp_path: Path) -> None:
     assert load_settings(tmp_path / "absent.toml").model_profile == "medium"
+
+
+def test_the_ambient_environment_is_hidden_from_tests() -> None:
+    """Guards the autouse fixture that makes the suite machine-independent.
+
+    CI exports DIAIRY_MODEL_PROFILE, and .env.example tells developers to export
+    a vault path. Either one leaking in makes tests describe the machine instead
+    of the code, which is how the first CI run went red.
+    """
+    leaked = {key for key in os.environ if key.startswith("DIAIRY_") and key != "DIAIRY_CONFIG"}
+    assert leaked == set()
 
 
 def test_invalid_config_file_is_reported_clearly(tmp_path: Path) -> None:
