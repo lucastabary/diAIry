@@ -1,0 +1,32 @@
+[
+  {
+    "subject": "",
+    "predicate": "fini",
+    "object": "nom de la rose",
+    "note": "Explicit, with an implicit subject. The easiest case."
+  },
+  {
+    "subject": "eco",
+    "predicate": "",
+    "object": "semiotique",
+    "note": "Requires linking the author to what the entry says about the book."
+  },
+  {
+    "subject": "",
+    "predicate": "envie",
+    "object": "borges",
+    "note": "A desire, not an event. Often mis-typed as a completed action."
+  },
+  {
+    "subject": "marc",
+    "predicate": "propose",
+    "object": "export",
+    "note": "Another person as subject, in a section unrelated to the rest."
+  },
+  {
+    "subject": "",
+    "predicate": "",
+    "object": "jeudi",
+    "note": "A relative date as a literal object; should not become an entity."
+  }
+]

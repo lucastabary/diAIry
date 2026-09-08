@@ -1,0 +1,32 @@
+[
+  {
+    "subject": "",
+    "predicate": "arret",
+    "object": "synthe",
+    "note": "Abandonment. The user asked to be able to query these specifically."
+  },
+  {
+    "subject": "",
+    "predicate": "voulait",
+    "object": "electronique",
+    "note": "A stated motivation, in the past tense, reinterpreting the project."
+  },
+  {
+    "subject": "",
+    "predicate": "",
+    "object": "sequenceur",
+    "note": "An idea kept alive inside an entry about giving up. Easy to lose."
+  },
+  {
+    "subject": "",
+    "predicate": "ecout",
+    "object": "colin stetson",
+    "note": "A person as the object of a listening event, not a subject."
+  },
+  {
+    "subject": "saxophone",
+    "predicate": "",
+    "object": "percussion",
+    "note": "An opinion phrased as an impression. Should be low confidence."
+  }
+]

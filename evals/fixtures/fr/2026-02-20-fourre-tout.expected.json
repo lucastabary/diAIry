@@ -1,0 +1,32 @@
+[
+  {
+    "subject": "",
+    "predicate": "dor",
+    "object": "",
+    "note": "Poor sleep, three nights running. No punctuation, no capitals."
+  },
+  {
+    "subject": "",
+    "predicate": "",
+    "object": "parser",
+    "note": "Working on the parser, stated in the same breath as the sleep."
+  },
+  {
+    "subject": "",
+    "predicate": "",
+    "object": "roman",
+    "note": "An idea for a novel. A goal, not an event."
+  },
+  {
+    "subject": "marco",
+    "predicate": "",
+    "object": "lisbonne",
+    "note": "Entity resolution: the entry itself says Marco is the Marc from work."
+  },
+  {
+    "subject": "",
+    "predicate": "",
+    "object": "dentiste",
+    "note": "A task, in an abandoned line. Must survive the truncated sentence above."
+  }
+]
